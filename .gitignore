@@ -1,0 +1,59 @@
+﻿# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+.venv/
+env/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# System
+.DS_Store
+Thumbs.db
+
+# Project specific
+data/operations.xlsx  # Не загружаем данные
+*.log
+app.log
+.env
+.env_template
+.env_template
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Flake8 демо ошибки (если нужно их исключить)
+flake8_errors/
+error_*.py
+exactly_five_errors.py
+
+# Временные файлы
+temp_errors/
