@@ -38,11 +38,10 @@ env/
 Thumbs.db
 
 # Project specific
-data/operations.xlsx  # Не загружаем данные
+data/operations.xlsx  # Не загружаем большие файлы данных
 *.log
 app.log
-.env
-.env_template
+.env  # Не загружаем секреты
 .env_template
 
 # Test outputs
@@ -50,10 +49,12 @@ app.log
 .coverage
 htmlcov/
 
-# Flake8 демо ошибки (если нужно их исключить)
+# Flake8 демо ошибки (если они созданы)
 flake8_errors/
 error_*.py
 exactly_five_errors.py
+temp_errors/
 
 # Временные файлы
-temp_errors/
+*.tmp
+*.temp
