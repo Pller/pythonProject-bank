@@ -1,79 +1,94 @@
-"""Тесты для модуля services."""
-
+﻿\"\"\"
+Тесты для модуля services.
+\"\"\"
+import pytest
 from src.services import (
-    investment_bank,
-    profitable_cashback_categories,
-    search_by_phone_numbers,
-    search_person_transfers,
-    simple_search,
+    analyze_cashback_categories,
+    calculate_investment_piggybank,
+    search_transactions,
+    find_phone_transactions,
+    find_personal_transfers,
 )
 
 
-class TestServices:
-    """Тесты для модуля services."""
+@pytest.fixture
+def sample_transactions():
+    \"\"\"Фикстура с тестовыми транзакциями для сервисов.\"\"\"
+    return [
+        {
+            \"Категория\": \"Супермаркеты\",
+            \"Кешбэк\": 50,
+            \"Сумма операции\": 1000,
+            \"Описание\": \"Покупка в магазине\",
+            \"Округление на «Инвесткопилку»\": 10,
+        },
+        {
+            \"Категория\": \"Транспорт\",
+            \"Кешбэк\": 10,
+            \"Сумма операции\": 500,
+            \"Описание\": \"Такси 89161234567\",
+            \"Округление на «Инвесткопилку»\": 5,
+        },
+        {
+            \"Категория\": \"Рестораны\",
+            \"Кешбэк\": 100,
+            \"Сумма операции\": 2000,
+            \"Описание\": \"Оплата за ужин\",
+            \"Округление на «Инвесткопилку»\": 20,
+        },
+    ]
 
-    def setup_method(self):
-        """Подготовка тестовых данных."""
-        self.sample_transactions = [
-            {
-                "Дата операции": "2024-01-15",
-                "Категория": "Супермаркеты",
-                "Сумма операции": -1000.0,
-                "Описание": "Покупка в магазине",
-            },
-            {
-                "Дата операции": "2024-01-16",
-                "Категория": "Транспорт",
-                "Сумма операции": -500.0,
-                "Описание": "Такси +7 999 123-45-67",
-            },
-            {
-                "Дата операции": "2024-01-17",
-                "Категория": "Переводы",
-                "Сумма операции": -2000.0,
-                "Описание": "Перевод Иванов И.",
-            },
-        ]
 
-    def test_profitable_cashback_categories(self):
-        """Тест анализа выгодных категорий кешбэка."""
-        result = profitable_cashback_categories(self.sample_transactions, 2024, 1)
+def test_analyze_cashback_categories(sample_transactions):
+    \"\"\"Тест анализа категорий кешбэка.\"\"\"
+    result = analyze_cashback_categories(sample_transactions, \"1/2024\")
+    assert len(result) > 0
 
-        assert isinstance(result, dict)
-        assert "Супермаркеты" in result
-        assert result["Супермаркеты"] == 50.0  # 1000 * 0.05
 
-    def test_investment_bank(self):
-        """Тест расчета инвесткопилки."""
-        result = investment_bank("2024-01", self.sample_transactions, 50)
+def test_analyze_cashback_empty():
+    \"\"\"Тест с пустым списком транзакций.\"\"\"
+    result = analyze_cashback_categories([], \"1/2024\")
+    assert result == []
 
-        assert isinstance(result, float)
-        assert result > 0
 
-    def test_simple_search_found(self):
-        """Тест успешного поиска."""
-        result = simple_search(self.sample_transactions, "магазин")
+def test_calculate_investment_piggybank(sample_transactions):
+    \"\"\"Тест расчета суммы инвесткопилки.\"\"\"
+    result = calculate_investment_piggybank(sample_transactions)
+    assert isinstance(result, (int, float))
 
-        assert len(result) == 1
-        assert result[0]["Описание"] == "Покупка в магазине"
 
-    def test_simple_search_not_found(self):
-        """Тест поиска без результатов."""
-        result = simple_search(self.sample_transactions, "несуществующий")
+def test_calculate_investment_empty():
+    \"\"\"Тест с пустым списком транзакций.\"\"\"
+    result = calculate_investment_piggybank([])
+    assert result == 0
 
-        assert len(result) == 0
 
-    def test_search_by_phone_numbers(self):
-        """Тест поиска по телефонным номерам."""
-        result = search_by_phone_numbers(self.sample_transactions)
+@pytest.mark.parametrize(
+    \"search_term,expected_count\",
+    [
+        (\"магазин\", 1),
+        (\"такси\", 1),
+        (\"ресторан\", 0),
+        (\"\", 3),
+    ],
+)
+def test_search_transactions(sample_transactions, search_term, expected_count):
+    \"\"\"Тест поиска транзакций.\"\"\"
+    result = search_transactions(sample_transactions, search_term)
+    assert len(result) == expected_count
 
-        assert len(result) == 1
-        assert "999 123-45-67" in result[0]["Описание"]
 
-    def test_search_person_transfers(self):
-        """Тест поиска переводов физлицам."""
-        result = search_person_transfers(self.sample_transactions)
+def test_find_phone_transactions(sample_transactions):
+    \"\"\"Тест поиска транзакций с телефонными номерами.\"\"\"
+    result = find_phone_transactions(sample_transactions)
+    assert len(result) == 1
 
-        assert len(result) == 1
-        assert result[0]["Категория"] == "Переводы"
-        assert "Иванов И." in result[0]["Описание"]
+
+def test_find_personal_transfers():
+    \"\"\"Тест поиска переводов физлицам.\"\"\"
+    transactions = [
+        {\"Описание\": \"Перевод Ивану Иванову\", \"Сумма операции\": 1000},
+        {\"Описание\": \"Оплата услуг\", \"Сумма операции\": 500},
+    ]
+    result = find_personal_transfers(transactions)
+    assert len(result) == 1

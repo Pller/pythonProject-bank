@@ -1,144 +1,138 @@
-﻿"""Модуль для генерации отчетов."""
-
+﻿"""
+Модуль для генерации отчетов.
+"""
 import logging
-from datetime import datetime, timedelta
-from functools import wraps
-
 import pandas as pd
+from datetime import datetime
+from typing import List, Dict, Any
+from src.utils import save_report
 
 logger = logging.getLogger(__name__)
 
 
-def report_decorator(filename=None):
-    """Декоратор для сохранения результатов отчетов в файл."""
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            result = func(*args, **kwargs)
-
-            if filename is None:
-                report_filename = f"report_{func.__name__}_" f"{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            else:
-                report_filename = filename
-
-            try:
-                if isinstance(result, pd.DataFrame):
-                    result.to_json(report_filename, orient="records", force_ascii=False, indent=2)
-                else:
-                    import json
-
-                    with open(report_filename, "w", encoding="utf-8") as f:
-                        json.dump(result, f, ensure_ascii=False, indent=2)
-
-                logger.info(f"Отчет сохранен в файл: {report_filename}")
-            except Exception as e:
-                logger.error(f"Ошибка сохранения отчета: {e}")
-
-            return result
-
-        return wrapper
-
-    return decorator
-
-
-@report_decorator()
-def spending_by_category(transactions, category, date=None):
-    """Анализирует траты по категории за последние 3 месяца."""
+def generate_spending_by_category_report(
+    transactions: List[Dict[str, Any]], category: str
+) -> Dict[str, Any]:
+    """Генерирует отчет по категории."""
     try:
-        if date is None:
-            end_date = datetime.now()
-        else:
-            end_date = datetime.strptime(date, "%Y-%m-%d")
-
-        start_date = end_date - timedelta(days=90)
-
-        transactions["Дата операции"] = pd.to_datetime(transactions["Дата операции"])
-        mask = (transactions["Дата операции"] >= start_date) & (transactions["Дата операции"] <= end_date)
-        filtered_data = transactions[mask]
-
-        category_data = filtered_data[filtered_data["Категория"] == category]
-
-        category_data = category_data.copy()
-        category_data["month"] = category_data["Дата операции"].dt.to_period("M")
-
-        expenses = category_data[category_data["Сумма операции"] < 0].copy()
-        expenses["Сумма операции"] = expenses["Сумма операции"].abs()
-
-        monthly_spending = expenses.groupby("month")["Сумма операции"].sum().reset_index()
-        monthly_spending["month"] = monthly_spending["month"].astype(str)
-
+        df = pd.DataFrame(transactions)
+        if df.empty:
+            return {"category": category, "months": [], "total": 0}
+        
+        df["Дата операции"] = pd.to_datetime(df["Дата операции"], errors="coerce")
+        df["month"] = df["Дата операции"].dt.to_period("M")
+        
+        category_df = df[df["Категория"] == category]
+        
+        monthly_data = []
+        total = 0
+        
+        for month, group in category_df.groupby("month"):
+            month_total = group["Сумма операции"].sum()
+            monthly_data.append({
+                "month": str(month),
+                "amount": float(month_total),
+                "count": len(group)
+            })
+            total += month_total
+        
+        report = {
+            "category": category,
+            "months": monthly_data,
+            "total": float(total),
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        save_report(report, "report_spending_by_category")
         logger.info(f"Сгенерирован отчет по категории '{category}'")
-        return monthly_spending
-
+        return report
+        
     except Exception as e:
         logger.error(f"Ошибка генерации отчета по категории: {e}")
-        return pd.DataFrame()
+        return {"category": category, "error": str(e)}
 
 
-@report_decorator()
-def spending_by_weekday(transactions, date=None):
-    """Анализирует средние траты по дням недели."""
+def generate_spending_by_weekday_report(
+    transactions: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Генерирует отчет по дням недели."""
     try:
-        if date is None:
-            end_date = datetime.now()
-        else:
-            end_date = datetime.strptime(date, "%Y-%m-%d")
-
-        start_date = end_date - timedelta(days=90)
-
-        transactions["Дата операции"] = pd.to_datetime(transactions["Дата операции"])
-        mask = (transactions["Дата операции"] >= start_date) & (transactions["Дата операции"] <= end_date)
-        filtered_data = transactions[mask]
-
-        expenses = filtered_data[filtered_data["Сумма операции"] < 0].copy()
-        expenses["Сумма операции"] = expenses["Сумма операции"].abs()
-
-        expenses["weekday"] = expenses["Дата операции"].dt.day_name()
-
-        weekday_spending = expenses.groupby("weekday")["Сумма операции"].mean().round(2).reset_index()
-
-        weekday_order = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-        weekday_spending["weekday"] = pd.Categorical(
-            weekday_spending["weekday"], categories=weekday_order, ordered=True
-        )
-        weekday_spending = weekday_spending.sort_values("weekday")
-
+        df = pd.DataFrame(transactions)
+        if df.empty:
+            return {"days": [], "total": 0}
+        
+        df["Дата операции"] = pd.to_datetime(df["Дата операции"], errors="coerce")
+        df["weekday"] = df["Дата операции"].dt.day_name()
+        
+        weekdays_order = ["Monday", "Tuesday", "Wednesday", "Thursday", 
+                         "Friday", "Saturday", "Sunday"]
+        
+        daily_data = []
+        total = 0
+        
+        for day in weekdays_order:
+            day_df = df[df["weekday"] == day]
+            day_total = day_df["Сумма операции"].sum()
+            daily_data.append({
+                "day": day,
+                "amount": float(day_total),
+                "count": len(day_df)
+            })
+            total += day_total
+        
+        report = {
+            "days": daily_data,
+            "total": float(total),
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        save_report(report, "report_spending_by_weekday")
         logger.info("Сгенерирован отчет по дням недели")
-        return weekday_spending
-
+        return report
+        
     except Exception as e:
         logger.error(f"Ошибка генерации отчета по дням недели: {e}")
-        return pd.DataFrame()
+        return {"error": str(e)}
 
 
-@report_decorator()
-def spending_by_workday(transactions, date=None):
-    """Анализирует средние траты в рабочие и выходные дни."""
+def generate_spending_by_workday_report(
+    transactions: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Генерирует отчет по рабочим/выходным дням."""
     try:
-        if date is None:
-            end_date = datetime.now()
-        else:
-            end_date = datetime.strptime(date, "%Y-%m-%d")
-
-        start_date = end_date - timedelta(days=90)
-
-        transactions["Дата операции"] = pd.to_datetime(transactions["Дата операции"])
-        mask = (transactions["Дата операции"] >= start_date) & (transactions["Дата операции"] <= end_date)
-        filtered_data = transactions[mask]
-
-        expenses = filtered_data[filtered_data["Сумма операции"] < 0].copy()
-        expenses["Сумма операции"] = expenses["Сумма операции"].abs()
-
-        expenses["is_weekend"] = expenses["Дата операции"].dt.weekday >= 5
-
-        day_type_spending = expenses.groupby("is_weekend")["Сумма операции"].mean().round(2).reset_index()
-        day_type_spending["day_type"] = day_type_spending["is_weekend"].map({True: "Выходной", False: "Рабочий"})
-        day_type_spending = day_type_spending[["day_type", "Сумма операции"]]
-
+        df = pd.DataFrame(transactions)
+        if df.empty:
+            return {"categories": [], "total": 0}
+        
+        df["Дата операции"] = pd.to_datetime(df["Дата операции"], errors="coerce")
+        df["weekday"] = df["Дата операции"].dt.dayofweek
+        df["day_type"] = df["weekday"].apply(
+            lambda x: "Рабочий день" if x < 5 else "Выходной"
+        )
+        
+        categories_data = []
+        total = 0
+        
+        for day_type in ["Рабочий день", "Выходной"]:
+            type_df = df[df["day_type"] == day_type]
+            type_total = type_df["Сумма операции"].sum()
+            categories_data.append({
+                "category": day_type,
+                "amount": float(type_total),
+                "count": len(type_df)
+            })
+            total += type_total
+        
+        report = {
+            "categories": categories_data,
+            "total": float(total),
+            "generated_at": datetime.now().isoformat()
+        }
+        
+        save_report(report, "report_spending_by_workday")
         logger.info("Сгенерирован отчет по рабочим/выходным дням")
-        return day_type_spending
-
+        return report
+        
     except Exception as e:
         logger.error(f"Ошибка генерации отчета по типам дней: {e}")
-        return pd.DataFrame()
+        return {"error": str(e)}

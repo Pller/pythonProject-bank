@@ -1,149 +1,171 @@
-﻿"""Модуль сервисов для анализа транзакций."""
-
+﻿"""
+Модуль сервисов для анализа транзакций.
+"""
 import logging
 import re
-from collections import defaultdict
+from typing import List, Dict, Any
 from datetime import datetime
-from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 
-def profitable_cashback_categories(data: List[Dict[str, Any]], year: int, month: int) -> Dict[str, float]:
-    """Анализирует выгодные категории для повышенного кешбэка."""
+def analyze_cashback_categories(
+    transactions: List[Dict[str, Any]], period: str
+) -> List[Dict[str, Any]]:
+    """
+    Анализирует категории с наилучшим кешбэком.
+    
+    Args:
+        transactions: Список транзакций
+        period: Период анализа
+        
+    Returns:
+        Список категорий с кешбэком
+    """
     try:
-        category_cashback = defaultdict(float)
-
-        for transaction in data:
-            # Проверяем дату операции
-            op_date = transaction.get("Дата операции")
-            if not op_date:
-                continue
-
-            if isinstance(op_date, str):
-                try:
-                    op_date = datetime.strptime(op_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
-
-            if op_date.year == year and op_date.month == month:
-                category = transaction.get("Категория", "Другое")
-                amount = abs(transaction.get("Сумма операции", 0))
-
-                # Предполагаем повышенный кешбэк 5%
-                cashback = amount * 0.05
-                category_cashback[category] += cashback
-
-        # Округляем значения
-        result = {category: round(cashback, 2) for category, cashback in category_cashback.items()}
-
-        logger.info(f"Проанализированы категории кешбэка за {month}/{year}")
-        return result
-
-    except Exception as e:
-        logger.error(f"Ошибка анализа категорий кешбэка: {e}")
-        return {}
-
-
-def investment_bank(month: str, transactions: List[Dict[str, Any]], limit: int) -> float:
-    """Рассчитывает сумму для инвесткопилки через округление трат."""
-    try:
-        total_investment = 0.0
-
+        cashback_by_category = {}
+        
         for transaction in transactions:
-            # Проверяем дату операции
-            op_date = transaction.get("Дата операции")
-            if not op_date:
-                continue
+            category = transaction.get("Категория", "Без категории")
+            cashback = transaction.get("Кешбэк", 0)
+            
+            if isinstance(cashback, (int, float)) and cashback > 0:
+                cashback_by_category[category] = (
+                    cashback_by_category.get(category, 0) + cashback
+                )
+        
+        # Сортируем по убыванию кешбэка
+        result = [
+            {"category": category, "cashback": cashback}
+            for category, cashback in sorted(
+                cashback_by_category.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )
+        ]
+        
+        logger.info(f"Проанализированы категории кешбэка за {period}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Ошибка анализа кешбэка: {e}")
+        return []
 
-            if isinstance(op_date, str):
-                try:
-                    op_date = datetime.strptime(op_date, "%Y-%m-%d")
-                except ValueError:
-                    continue
 
-            # Проверяем что транзакция в нужном месяце
-            if op_date.strftime("%Y-%m") == month:
-                amount = transaction.get("Сумма операции", 0)
-
-                # Округляем только расходы (отрицательные суммы)
-                if amount < 0:
-                    rounded_amount = _round_to_limit(abs(amount), limit)
-                    investment = rounded_amount - abs(amount)
-                    total_investment += investment
-
-        logger.info(f"Рассчитана сумма инвесткопилки: {total_investment:.2f}")
-        return round(total_investment, 2)
-
+def calculate_investment_piggybank(
+    transactions: List[Dict[str, Any]]
+) -> float:
+    """
+    Рассчитывает сумму инвесткопилки.
+    
+    Args:
+        transactions: Список транзакций
+        
+    Returns:
+        Сумма инвесткопилки
+    """
+    try:
+        total = 0.0
+        
+        for transaction in transactions:
+            rounding = transaction.get("Округление на «Инвесткопилку»", 0)
+            if isinstance(rounding, (int, float)):
+                total += float(rounding)
+        
+        logger.info(f"Рассчитана сумма инвесткопилки: {total:.2f}")
+        return round(total, 2)
+        
     except Exception as e:
         logger.error(f"Ошибка расчета инвесткопилки: {e}")
         return 0.0
 
 
-def _round_to_limit(amount: float, limit: int) -> float:
-    """Округляет сумму до ближайшего кратного limit."""
-    return ((amount + limit - 1) // limit) * limit
-
-
-def simple_search(transactions: List[Dict[str, Any]], search_query: str) -> List[Dict[str, Any]]:
-    """Простой поиск транзакций по описанию или категории."""
+def search_transactions(
+    transactions: List[Dict[str, Any]], search_term: str
+) -> List[Dict[str, Any]]:
+    """
+    Ищет транзакции по ключевому слову.
+    
+    Args:
+        transactions: Список транзакций
+        search_term: Ключевое слово для поиска
+        
+    Returns:
+        Найденные транзакции
+    """
     try:
-        query_lower = search_query.lower()
-        results = []
-
+        if not search_term:
+            return transactions
+        
+        search_term_lower = search_term.lower()
+        result = []
+        
         for transaction in transactions:
-            description = transaction.get("Описание", "").lower()
-            category = transaction.get("Категория", "").lower()
-
-            if query_lower in description or query_lower in category:
-                results.append(transaction)
-
-        logger.info(f"Найдено {len(results)} транзакций по запросу '{search_query}'")
-        return results
-
+            description = str(transaction.get("Описание", "")).lower()
+            if search_term_lower in description:
+                result.append(transaction)
+        
+        logger.info(f"Найдено {len(result)} транзакций по запросу '{search_term}'")
+        return result
+        
     except Exception as e:
-        logger.error(f"Ошибка простого поиска: {e}")
+        logger.error(f"Ошибка поиска транзакций: {e}")
         return []
 
 
-def search_by_phone_numbers(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Ищет транзакции с телефонными номерами в описании."""
+def find_phone_transactions(
+    transactions: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Находит транзакции с телефонными номерами.
+    
+    Args:
+        transactions: Список транзакций
+        
+    Returns:
+        Транзакции с телефонными номерами
+    """
     try:
-        # Регулярное выражение для российских телефонных номеров
-        phone_pattern = r"(\+7|8)[\s\-]?\(?\d{3}\)?[\s\-]?\d{3}[\s\-]?\d{2}[\s\-]?\d{2}"
-
-        results = []
+        phone_pattern = r'\b(?:\+7|8|7)?[\s\-()]*\d{3}[\s\-()]*\d{3}[\s\-()]*\d{2}[\s\-()]*\d{2}\b'
+        result = []
+        
         for transaction in transactions:
-            description = transaction.get("Описание", "")
-
+            description = str(transaction.get("Описание", ""))
             if re.search(phone_pattern, description):
-                results.append(transaction)
-
-        logger.info(f"Найдено {len(results)} транзакций с телефонными номерами")
-        return results
-
+                result.append(transaction)
+        
+        logger.info(f"Найдено {len(result)} транзакций с телефонными номерами")
+        return result
+        
     except Exception as e:
-        logger.error(f"Ошибка поиска по телефонным номерам: {e}")
+        logger.error(f"Ошибка поиска телефонных номеров: {e}")
         return []
 
 
-def search_person_transfers(transactions: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Ищет переводы физическим лицам."""
+def find_personal_transfers(
+    transactions: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """
+    Находит переводы физлицам.
+    
+    Args:
+        transactions: Список транзакций
+        
+    Returns:
+        Переводы физлицам
+    """
     try:
-        # Паттерн для имени и фамилии с точкой
-        name_pattern = r"[А-Я][а-я]+\s[А-Я]\."
-
-        results = []
+        transfer_keywords = ["перевод", "перевел", "перевод физ", "перевод част", "иванов", "петров"]
+        result = []
+        
         for transaction in transactions:
-            category = transaction.get("Категория", "")
-            description = transaction.get("Описание", "")
-
-            if category == "Переводы" and re.search(name_pattern, description):
-                results.append(transaction)
-
-        logger.info(f"Найдено {len(results)} переводов физлицам")
-        return results
-
+            description = str(transaction.get("Описание", "")).lower()
+            if any(keyword in description for keyword in transfer_keywords):
+                result.append(transaction)
+        
+        logger.info(f"Найдено {len(result)} переводов физлицам")
+        return result
+        
     except Exception as e:
         logger.error(f"Ошибка поиска переводов физлицам: {e}")
         return []
