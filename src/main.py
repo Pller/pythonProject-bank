@@ -1,100 +1,84 @@
-﻿"""Основной модуль приложения."""
-
+﻿"""
+Главный модуль приложения для анализа банковских транзакций.
+"""
 import logging
-
-from src.reports import spending_by_category, spending_by_weekday, spending_by_workday
+from src.utils import load_transactions
 from src.services import (
-    investment_bank,
-    profitable_cashback_categories,
-    search_by_phone_numbers,
-    search_person_transfers,
-    simple_search,
+    analyze_cashback_categories,
+    calculate_investment_piggybank,
+    search_transactions,
+    find_phone_transactions,
+    find_personal_transfers,
 )
-from src.utils import read_excel_file
-from src.views import events_page, home_page
+from src.reports import (
+    generate_spending_by_category_report,
+    generate_spending_by_weekday_report,
+    generate_spending_by_workday_report,
+)
+from src.views import home_page, events_page
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("app.log", encoding="utf-8"), logging.StreamHandler()],
 )
-
 logger = logging.getLogger(__name__)
 
 
-def check_data_structure(df):
-    """Проверяет структуру данных."""
-    print("Структура данных:")
-    print(f"  Всего строк: {len(df)}")
-    print(f"  Колонки: {list(df.columns)}")
-    print(f"  Период: {df['Дата операции'].min()} - {df['Дата операции'].max()}")
-
-
-def main():
+def main() -> None:
     """Основная функция приложения."""
+    print("Запуск приложения анализа банковских транзакций")
+    
     try:
-        print("Запуск приложения анализа банковских транзакций")
-
-        # Загружаем данные
+        # Загрузка данных
         print("Загрузка данных...")
-        df = read_excel_file("data/operations.xlsx")
-
-        if df.empty:
-            print("Не удалось загрузить данные")
-            return
-
-        check_data_structure(df)
-        print(f"Загружено {len(df)} транзакций")
-
-        # Демонстрация функциональности
-        print("Демонстрация веб-страниц:")
-
-        # Главная страница
-        home_response = home_page("2024-01-15 14:30:00")
-        print(f"Главная страница: {len(home_response.get('cards', []))} карт")
-
-        # Страница событий
-        events_response = events_page("2024-01-15 14:30:00", "M")
-        expenses_total = events_response.get("expenses", {}).get("total_amount", 0)
-        print(f"Страница событий: расходы {expenses_total} руб.")
-
-        # Сервисы
-        print("Демонстрация сервисов:")
-        transactions_list = df.to_dict("records")
-
-        cashback_categories = profitable_cashback_categories(transactions_list, 2024, 1)
+        transactions = load_transactions()
+        print(f"Загружено {len(transactions)} транзакций")
+        
+        # Демонстрация веб-страниц
+        print("\nДемонстрация веб-страниц:")
+        home_data = home_page()
+        print(f"Главная страница: {home_data.get('total_transactions', 0)} транзакций, {len(home_data.get('cards', []))} карт")
+        
+        events_data = events_page("M")
+        expenses_total = events_data.get("expenses", {}).get("total", 0)
+        print(f"Страница событий: {events_data.get('total_events', 0)} событий, расходы: {expenses_total:.2f} руб.")
+        
+        # Демонстрация сервисов
+        print("\nДемонстрация сервисов:")
+        cashback_categories = analyze_cashback_categories(transactions, "1/2024")
         print(f"Выгодные категории кешбэка: {len(cashback_categories)} категорий")
-
-        investment = investment_bank("2024-01", transactions_list, 50)
-        print(f"Инвесткопилка: {investment} руб.")
-
-        search_results = simple_search(transactions_list, "магазин")
+        
+        piggybank = calculate_investment_piggybank(transactions)
+        print(f"Инвесткопилка: {piggybank} руб.")
+        
+        search_results = search_transactions(transactions, "магазин")
         print(f"Простой поиск: найдено {len(search_results)} транзакций")
-
-        phone_transactions = search_by_phone_numbers(transactions_list)
+        
+        phone_transactions = find_phone_transactions(transactions)
         print(f"Поиск по телефонам: найдено {len(phone_transactions)} транзакций")
-
-        person_transfers = search_person_transfers(transactions_list)
-        print(f"Переводы физлицам: найдено {len(person_transfers)} транзакций")
-
-        # Отчеты
-        print("Демонстрация отчетов:")
-
-        category_report = spending_by_category(df, "Супермаркеты")
-        print(f"Отчет по категории: {len(category_report)} месяцев")
-
-        weekday_report = spending_by_weekday(df)
-        print(f"Отчет по дням недели: {len(weekday_report)} дней")
-
-        workday_report = spending_by_workday(df)
-        print(f"Отчет по типам дней: {len(workday_report)} категорий")
-
-        print("Все функции успешно выполнены!")
+        
+        personal_transfers = find_personal_transfers(transactions)
+        print(f"Переводы физлицам: найдено {len(personal_transfers)} транзакций")
+        
+        # Демонстрация отчетов
+        print("\nДемонстрация отчетов:")
+        category_report = generate_spending_by_category_report(
+            transactions, "Супермаркеты"
+        )
+        print(f"Отчет по категории: {len(category_report.get('months', []))} месяцев")
+        
+        weekday_report = generate_spending_by_weekday_report(transactions)
+        print(f"Отчет по дням недели: {len(weekday_report.get('days', []))} дней")
+        
+        workday_report = generate_spending_by_workday_report(transactions)
+        print(f"Отчет по типам дней: {len(workday_report.get('categories', []))} категорий")
+        
+        print("\nВсе функции успешно выполнены!")
         print("Отчеты сохранены в файлы с префиксом 'report_'")
-
+        
     except Exception as e:
-        logger.error(f"Ошибка в основном модуле: {e}")
+        logger.error(f"Ошибка в работе приложения: {e}")
         print(f"Произошла ошибка: {e}")
 
 
