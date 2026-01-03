@@ -38,10 +38,11 @@ def main() -> None:
         # Демонстрация веб-страниц
         print("\nДемонстрация веб-страниц:")
         home_data = home_page()
-        print(f"Главная страница: {home_data.get('total_transactions', 0)} транзакций")
+        print(f"Главная страница: {home_data.get('total_transactions', 0)} транзакций, {len(home_data.get('cards', []))} карт")
         
-        events_data = events_page('M')
-        print(f"Страница событий: {events_data.get('total_events', 0)} событий")
+        events_data = events_page("M")
+        expenses_total = events_data.get("expenses", {}).get("total", 0)
+        print(f"Страница событий: {events_data.get('total_events', 0)} событий, расходы: {expenses_total:.2f} руб.")
         
         # Демонстрация сервисов
         print("\nДемонстрация сервисов:")
