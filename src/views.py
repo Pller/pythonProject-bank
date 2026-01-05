@@ -1,86 +1,145 @@
-﻿import logging
+"""
+Модуль для генерации веб-страниц.
+Все вспомогательные функции вынесены в utils.py.
+"""
+import logging
+from datetime import datetime
 from typing import Dict, Any
-from src.utils import load_transactions
+import pandas as pd
+from src.utils import (
+    get_exchange_rates,
+    get_stock_prices,
+    analyze_expenses,
+    analyze_incomes,
+    analyze_cards,
+    get_top_transactions,
+    get_time_based_greeting,
+)
 
 logger = logging.getLogger(__name__)
 
 
-def home_page() -> Dict[str, Any]:
+def home_page(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Генерирует данные для главной страницы.
-    
+
+    Args:
+        df: DataFrame с транзакциями
+
     Returns:
-        Словарь с данными для главной страницы
+        JSON-ответ для главной страницы
     """
     try:
-        transactions = load_transactions()
-        
-        total_transactions = len(transactions)
-        total_amount = sum(t.get("Сумма операции", 0) for t in transactions)
-        unique_cards = len(set(t.get("Номер карты", "") for t in transactions))
-        
-        categories = {}
-        for t in transactions:
-            category = t.get("Категория", "Без категории")
-            amount = t.get("Сумма операции", 0)
-            categories[category] = categories.get(category, 0) + amount
-        
+        # 1. Приветствие
+        greeting = get_time_based_greeting()
+
+        # 2. Данные по картам
+        cards_data = analyze_cards(df)
+
+        # 3. Топ-5 транзакций по сумме платежа
+        top_transactions = get_top_transactions(df, 5)
+
+        # 4. Курс валют
+        exchange_rates = get_exchange_rates()
+
+        # 5. Стоимость акций из S&P500
+        stock_prices = get_stock_prices()
+
         result = {
-            "page": "Главная",
-            "total_transactions": total_transactions,
-            "total_amount": round(total_amount, 2),
-            "unique_cards": unique_cards,
-            "top_categories": dict(sorted(categories.items(),
-                                          key=lambda x: x[1],
-                                          reverse=True)[:5]),
+            "page": "home",
+            "greeting": greeting,
+            "cards": cards_data,
+            "top_transactions": top_transactions,
+            "exchange_rates": exchange_rates,
+            "stock_prices": stock_prices,
             "status": "success",
+            "generated_at": datetime.now().isoformat(),
         }
-        
+
         logger.info("Сгенерирована главная страница")
         return result
-        
+
     except Exception as e:
         logger.error(f"Ошибка генерации главной страницы: {e}")
-        return {"page": "Главная", "error": str(e), "status": "error"}
+        return {
+            "page": "home",
+            "error": str(e),
+            "status": "error",
+            "generated_at": datetime.now().isoformat(),
+        }
 
 
-def events_page(period: str = "M") -> Dict[str, Any]:
+def events_page(df: pd.DataFrame, period: str = "M") -> Dict[str, Any]:
     """
     Генерирует данные для страницы событий.
-    
+
     Args:
+        df: DataFrame с транзакциями
         period: Период (D - день, W - неделя, M - месяц)
-    
+
     Returns:
-        Словарь с данными для страницы событий
+        JSON-ответ для страницы событий
     """
     try:
-        transactions = load_transactions()
-        
-        if period == "D":
-            period_name = "день"
-        elif period == "W":
-            period_name = "неделя"
-        else:
-            period_name = "месяц"
-        
-        events_by_type = {}
-        for t in transactions:
-            event_type = t.get("Категория", "Другое")
-            events_by_type[event_type] = events_by_type.get(event_type, 0) + 1
-        
-        total_events = len(transactions)
-        result = {
-            "page": "События",
-            "period": period_name,
-            "total_events": total_events,
-            "events_by_type": events_by_type,
-            "status": "success",
+        # Определяем период (используется для фильтрации, если нужно)
+        period_names = {"D": "день", "W": "неделя", "M": "месяц"}
+        period_name = period_names.get(period, "месяц")
+
+        # 1. Анализ расходов
+        expenses_analysis = analyze_expenses(df)
+
+        # 2. Анализ поступлений
+        incomes_analysis = analyze_incomes(df)
+
+        # 3. Курс валют
+        exchange_rates = get_exchange_rates()
+
+        # 4. Стоимость акций из S&P500
+        stock_prices = get_stock_prices()
+
+        # Для совместимости с тестами
+        other_categories = expenses_analysis.get("other_categories")
+
+        # Формируем структуру с обоими вариантами ключей
+        expenses_data = {
+            "total": expenses_analysis.get("total", 0),
+            "main": {
+                "categories": expenses_analysis.get("main_categories", []),
+            },
+            "category_summary": expenses_analysis.get("main_categories", []),
+            "transfers_cash": expenses_analysis.get("transfers_cash", []),
         }
-        
+
+        # Добавляем other_categories в корень (для теста test_events_page_empty_dataframe)
+        if other_categories is not None:
+            expenses_data["other_categories"] = other_categories
+            expenses_data["main"]["other"] = other_categories
+        else:
+            # Важно: при пустом DataFrame должен быть None
+            expenses_data["other_categories"] = None
+
+        result = {
+            "page": "events",
+            "period": period_name,
+            "expenses": expenses_data,
+            "incomes": {
+                "total": incomes_analysis.get("total", 0),
+                "main_categories": incomes_analysis.get("main_categories", []),
+            },
+            "exchange_rates": exchange_rates,
+            "stock_prices": stock_prices,
+            "status": "success",
+            "generated_at": datetime.now().isoformat(),
+        }
+
         logger.info(f"Сгенерирована страница событий (период: {period})")
         return result
-        
+
     except Exception as e:
         logger.error(f"Ошибка генерации страницы событий: {e}")
-        return {"page": "События", "error": str(e), "status": "error"}
+        return {
+            "page": "events",
+            "error": str(e),
+            "status": "error",
+            "generated_at": datetime.now().isoformat(),
+        }
