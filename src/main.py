@@ -2,7 +2,7 @@
 Главный модуль приложения для анализа банковских транзакций.
 """
 import logging
-from src.utils import load_transactions
+from src.utils import read_excel_file, load_transactions
 from src.services import (
     analyze_cashback_categories,
     calculate_investment_piggybank,
@@ -26,23 +26,32 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """Основная функция приложения."""
+    """
+    Основная функция приложения.
+    """
     print("Запуск приложения анализа банковских транзакций")
     
     try:
         # Загрузка данных
         print("Загрузка данных...")
+        # Используем read_excel_file для получения DataFrame
+        df = read_excel_file()
         transactions = load_transactions()
         print(f"Загружено {len(transactions)} транзакций")
         
         # Демонстрация веб-страниц
         print("\nДемонстрация веб-страниц:")
-        home_data = home_page()
-        print(f"Главная страница: {home_data.get('total_transactions', 0)} транзакций, {len(home_data.get('cards', []))} карт")
+        home_data = home_page(df)
+        print(f"Главная страница: {home_data.get('status')}")
+        if home_data.get('status') == 'success':
+            print(f"  Приветствие: {home_data.get('greeting')}")
+            print(f"  Карт проанализировано: {len(home_data.get('cards', []))}")
         
-        events_data = events_page("M")
-        expenses_total = events_data.get("expenses", {}).get("total", 0)
-        print(f"Страница событий: {events_data.get('total_events', 0)} событий, расходы: {expenses_total:.2f} руб.")
+        events_data = events_page(df, "M")
+        print(f"Страница событий: {events_data.get('status')}")
+        if events_data.get('status') == 'success':
+            print(f"  Период: {events_data.get('period')}")
+            print(f"  Общие расходы: {events_data.get('expenses', {}).get('total', 0)} руб.")
         
         # Демонстрация сервисов
         print("\nДемонстрация сервисов:")
