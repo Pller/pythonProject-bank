@@ -1,86 +1,145 @@
-﻿import logging
+"""
+Модуль для генерации веб-страниц.
+Все вспомогательные функции вынесены в utils.py.
+"""
+import logging
+from datetime import datetime
 from typing import Dict, Any
-from src.utils import load_transactions
+import pandas as pd
+import json
+from pathlib import Path
+import os
+from src.utils import (
+    get_exchange_rates,
+    get_stock_prices,
+    analyze_cards,
+    get_top_transactions,
+    get_time_based_greeting,
+    load_transactions,
+    get_greeting,
+    get_currency_rates,
+    read_excel_file,
+)
 
 logger = logging.getLogger(__name__)
+DATA_DIR = Path(__file__).parent.parent / "data"
 
 
-def home_page() -> Dict[str, Any]:
+def home_page(date_str: str) -> Dict[str, Any]:
     """
     Генерирует данные для главной страницы.
-    
+
+    Args:
+        date_str: Дата и время в формате "YYYY-MM-DD HH:MM:SS"
+
     Returns:
-        Словарь с данными для главной страницы
+        JSON-ответ для главной страницы
     """
     try:
-        transactions = load_transactions()
-        
-        total_transactions = len(transactions)
-        total_amount = sum(t.get("Сумма операции", 0) for t in transactions)
-        unique_cards = len(set(t.get("Номер карты", "") for t in transactions))
-        
-        categories = {}
-        for t in transactions:
-            category = t.get("Категория", "Без категории")
-            amount = t.get("Сумма операции", 0)
-            categories[category] = categories.get(category, 0) + amount
-        
+        # 1. Парсим дату и получаем приветствие
+        date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
+        greeting = get_greeting(date)
+
+        # 2. Загружаем транзакции
+        transactions = read_excel_file(DATA_DIR / "operations.xlsx")
+
+        # 3. Проверяем, что это DataFrame
+        if not isinstance(transactions, pd.DataFrame):
+            raise ValueError("Транзакции должны быть в формате DataFrame")
+
+        # 4. Проверяем обязательные колонки
+        required_columns = {"Дата операции", "Номер карты", "Сумма операции", "Кешбэк", "Категория", "Описание"}
+        if not required_columns.issubset(transactions.columns):
+            missing = required_columns - set(transactions.columns)
+            raise ValueError(f"Отсутствуют обязательные колонки: {missing}")
+
+        # 5. Фильтруем по текущему месяцу (используя дату из аргумента)
+        transactions["Дата операции"] = pd.to_datetime(transactions["Дата операции"])
+        current_month = date.replace(day=1)  # Используем дату из аргумента
+        filtered = transactions[transactions["Дата операции"] >= current_month].copy()
+
+        # 6. Данные по картам (как в примере)
+        cards_data = []
+        if "Номер карты" in filtered.columns:
+            for card in filtered["Номер карты"].dropna().unique():
+                card_str = str(card)
+                last_digits = card_str[-4:] if len(card_str) > 4 else card_str
+                card_trans = filtered[filtered["Номер карты"] == card]
+                total_spent = card_trans["Сумма операции"].sum()
+                cashback = card_trans["Кешбэк"].sum()
+                cards_data.append(
+                    {
+                        "last_digits": last_digits,
+                        "total_spent": round(float(total_spent), 2),
+                        "cashback": round(float(cashback), 2),
+                    }
+                )
+
+        # 7. Топ-5 транзакций (как в примере)
+        top_trans_list = []
+        if not filtered.empty:
+            top_transactions = filtered.nlargest(5, "Сумма операции")
+            top_trans_list = [
+                {
+                    "date": row["Дата операции"].strftime("%d.%m.%Y"),
+                    "amount": round(row["Сумма операции"], 2),
+                    "category": row["Категория"],
+                    "description": row["Описание"],
+                }
+                for _, row in top_transactions.iterrows()
+            ]
+
+        # 8. Курс валют (загружаем из настроек пользователя)
+        try:
+            with open(Path(__file__).parent.parent / "user_settings.json", encoding="utf-8") as f:
+                settings = json.load(f)
+            user_currencies = settings.get("user_currencies", ["USD", "EUR", "GBP"])
+            currency_rates = get_currency_rates(user_currencies)
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            # Если нет настроек, используем дефолтные валюты
+            currency_rates = get_currency_rates()
+
+        # 9. Стоимость акций (загружаем из настроек пользователя)
+        try:
+            with open(Path(__file__).parent.parent / "user_settings.json", encoding="utf-8") as f:
+                settings = json.load(f)
+            user_stocks = settings.get("user_stocks", ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"])
+            stock_prices = get_stock_prices(user_stocks)
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            # Если нет настроек, используем дефолтные акции
+            stock_prices = get_stock_prices()
+
         result = {
-            "page": "Главная",
-            "total_transactions": total_transactions,
-            "total_amount": round(total_amount, 2),
-            "unique_cards": unique_cards,
-            "top_categories": dict(sorted(categories.items(),
-                                          key=lambda x: x[1],
-                                          reverse=True)[:5]),
+            "page": "home",
+            "greeting": greeting,
+            "cards": cards_data,
+            "top_transactions": top_trans_list,
+            "currency_rates": currency_rates,
+            "stock_prices": stock_prices,
             "status": "success",
+            "generated_at": datetime.now().isoformat(),
         }
-        
+
         logger.info("Сгенерирована главная страница")
         return result
-        
+
     except Exception as e:
         logger.error(f"Ошибка генерации главной страницы: {e}")
-        return {"page": "Главная", "error": str(e), "status": "error"}
-
-
-def events_page(period: str = "M") -> Dict[str, Any]:
-    """
-    Генерирует данные для страницы событий.
-    
-    Args:
-        period: Период (D - день, W - неделя, M - месяц)
-    
-    Returns:
-        Словарь с данными для страницы событий
-    """
-    try:
-        transactions = load_transactions()
-        
-        if period == "D":
-            period_name = "день"
-        elif period == "W":
-            period_name = "неделя"
-        else:
-            period_name = "месяц"
-        
-        events_by_type = {}
-        for t in transactions:
-            event_type = t.get("Категория", "Другое")
-            events_by_type[event_type] = events_by_type.get(event_type, 0) + 1
-        
-        total_events = len(transactions)
-        result = {
-            "page": "События",
-            "period": period_name,
-            "total_events": total_events,
-            "events_by_type": events_by_type,
-            "status": "success",
+        return {
+            "page": "home",
+            "error": str(e),
+            "status": "error",
+            "generated_at": datetime.now().isoformat(),
         }
-        
-        logger.info(f"Сгенерирована страница событий (период: {period})")
-        return result
-        
-    except Exception as e:
-        logger.error(f"Ошибка генерации страницы событий: {e}")
-        return {"page": "События", "error": str(e), "status": "error"}
+
+
+def events_page(df: pd.DataFrame, period: str = "M") -> Dict[str, Any]:
+    """
+    Заглушка для функции events_page (для совместимости).
+    """
+    return {
+        "page": "events",
+        "error": "Функция временно недоступна",
+        "status": "error",
+        "generated_at": datetime.now().isoformat(),
+    }
