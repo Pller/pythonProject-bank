@@ -1,0 +1,41 @@
+{
+  "days": [
+    {
+      "day": "Monday",
+      "amount": -306826.07,
+      "count": 146
+    },
+    {
+      "day": "Tuesday",
+      "amount": -274104.28,
+      "count": 137
+    },
+    {
+      "day": "Wednesday",
+      "amount": -251438.83,
+      "count": 144
+    },
+    {
+      "day": "Thursday",
+      "amount": -307218.07999999996,
+      "count": 143
+    },
+    {
+      "day": "Friday",
+      "amount": -244614.68999999997,
+      "count": 131
+    },
+    {
+      "day": "Saturday",
+      "amount": -290032.4,
+      "count": 145
+    },
+    {
+      "day": "Sunday",
+      "amount": -332968.29000000004,
+      "count": 154
+    }
+  ],
+  "total": -2007202.6400000001,
+  "generated_at": "2026-01-08T17:01:08.309321"
+}

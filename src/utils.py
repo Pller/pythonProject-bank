@@ -2,8 +2,8 @@
 import logging
 import json
 import os
-from pathlib import Path
-from datetime import datetime
+import requests
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 
@@ -13,347 +13,81 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-def load_transactions(filepath: str = "data/operations.xlsx") -> List[Dict[str, Any]]:
+def get_exchange_rates() -> Dict[str, float]:
     """
-    Загружает транзакции из Excel файла.
+    Получает курсы валют от Центробанка России.
 
-    Аргументы:
-        filepath: Путь к Excel файлу
-
-    Возвращает:
-        Список словарей с транзакциями
+    Returns:
+        Словарь с курсами валют (USD, EUR, GBP к RUB)
     """
     try:
-        if not os.path.exists(filepath):
-            logger.warning(f"Файл {filepath} не найден. Возвращаю пустой список.")
-            return []
+        url = "https://www.cbr-xml-daily.ru/daily_json.js"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
 
-        df = pd.read_excel(filepath)
-        logger.info(f"Успешно прочитано {len(df)} транзакций из {filepath}")
-        logger.info(f"Колонки в данных: {list(df.columns)}")
-
-        # Конвертируем даты если они есть
-        date_columns = [col for col in df.columns if 'дата' in col.lower() or 'date' in col.lower()]
-        for col in date_columns:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
-
-        return df.to_dict('records')
-
-    except Exception as e:
-        logger.error(f"Ошибка загрузки данных из {filepath}: {e}")
-        return []
-
-
-def load_settings(settings_file: str = ".env") -> Dict[str, str]:
-    """
-    Р—Р°РіСЂСѓР¶Р°РµС‚ РЅР°СЃС‚СЂРѕР№РєРё РёР· С„Р°Р№Р»Р°.
-
-    Аргументы:
-        settings_file: Путь к файлу с настройками
-
-    Возвращает:
-        Словарь с настройками
-    """
-    try:
-        settings = {}
-        if os.path.exists(settings_file):
-            with open(settings_file, 'r', encoding='utf-8') as f:
-                for line in f:
-                    line = line.strip()
-                    if line and not line.startswith('#'):
-                        if '=' in line:
-                            key, value = line.split('=', 1)
-                            settings[key.strip()] = value.strip()
-
-        # Добавляем переменные окружения
-        for key in ['API_KEY', 'EXCHANGE_API_KEY', 'STOCK_API_KEY']:
-            env_value = os.getenv(key)
-            if env_value:
-                settings[key] = env_value
-
-        logger.info(f"Загружено {len(settings)} настроек")
-        return settings
-
-    except Exception as e:
-        logger.error(f"Ошибка загрузки настроек: {e}")
-        return {}
-
-
-def save_report(report_data: Dict[str, Any], filename_prefix: str) -> str:
-    """
-    Сохраняет отчет в JSON файл.
-
-    Аргументы:
-        report_data: Данные отчета
-        filename_prefix: Префикс имени файла
-
-    Возвращает:
-        Путь к сохраненному файлу
-    """
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"{filename_prefix}_{timestamp}.json"
-
-        with open(filename, 'w', encoding='utf-8') as f:
-            json.dump(report_data, f, ensure_ascii=False, indent=2)
-
-        logger.info(f"Отчет сохранен в файл: {filename}")
-        return filename
-
-    except Exception as e:
-        logger.error(f"Ошибка сохранения отчета: {e}")
-        return ""
-
-
-def get_exchange_rates(currency_codes: List[str] = None) -> Dict[str, float]:
-    """
-    Получает курсы валют (заглушка).
-
-    Аргументы:
-        currency_codes: Список кодов валют
-
-    Возвращает:
-        Словарь с курсами валют
-    """
-    try:
-        # Заглушка для демонстрации
-        # В реальном приложении здесь будет API запрос
         rates = {
+            "USD": data["Valute"]["USD"]["Value"],
+            "EUR": data["Valute"]["EUR"]["Value"],
+            "GBP": data["Valute"]["GBP"]["Value"],
+        }
+
+        logger.info(f"Получены курсы валют: {rates}")
+        return rates
+
+    except Exception as e:
+        logger.error(f"Ошибка получения курсов валют: {e}")
+        # Возвращаем заглушки в случае ошибки
+        return {
             "USD": 90.5,
             "EUR": 98.2,
             "GBP": 114.3,
         }
 
-        if currency_codes:
-            rates = {code: rates.get(code, 0) for code in currency_codes}
 
-        logger.info(f"Получены курсы для {len(rates)} валют")
-        return rates
-
-    except Exception as e:
-        logger.error(f"Ошибка получения курсов валют: {e}")
-        return {}
-
-
-def get_stock_prices(stock_symbols: List[str] = None) -> Dict[str, float]:
+def get_stock_prices() -> Dict[str, float]:
     """
-    Получает цены акций (заглушка).
+    Получает цены акций из S&P500 через Yahoo Finance API.
 
-    Аргументы:
-        stock_symbols: Список символов акций
-
-    Возвращает:
+    Returns:
         Словарь с ценами акций
     """
     try:
-        # Заглушка для демонстрации
-        # В реальном приложении здесь будет API запрос
-        prices = {
-            "AAPL": 185.2,
-            "GOOGL": 142.5,
-            "MSFT": 374.5,
-            "TSLA": 240.1,
-            "AMZN": 154.9,
-        }
+        symbols = ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
+        prices = {}
 
-        if stock_symbols:
-            prices = {symbol: prices.get(symbol, 0) for symbol in stock_symbols}
+        for symbol in symbols:
+            try:
+                # Используем Yahoo Finance API
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+                response = requests.get(url, headers=headers, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+
+                price = data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+                prices[symbol] = price
+
+            except Exception as e:
+                logger.warning(f"Не удалось получить цену для {symbol}: {e}")
+                # Заглушка в случае ошибки
+                prices[symbol] = {
+                    "AAPL": 185.2,
+                    "GOOGL": 142.5,
+                    "MSFT": 374.5,
+                    "TSLA": 240.1,
+                    "AMZN": 154.9,
+                }.get(symbol, 0)
 
         logger.info(f"Получены цены для {len(prices)} акций")
         return prices
 
     except Exception as e:
         logger.error(f"Ошибка получения цен акций: {e}")
-        return {}
-
-
-def format_amount(amount: float, currency: str = "RUB") -> str:
-    """
-    Форматирует сумму для вывода.
-
-    Аргументы:
-        amount: Сумма
-        currency: Валюта
-
-    Возвращает:
-        Отформатированная строка
-    """
-    return f"{amount:,.2f} {currency}".replace(",", " ").replace(".", ",")
-
-
-def filter_by_date_range(
-        transactions: List[Dict[str, Any]],
-        start_date: Optional[str] = None,
-        end_date: Optional[str] = None,
-        date_column: str = "Р”Р°С‚Р° РѕРїРµСЂР°С†РёРё"
-) -> List[Dict[str, Any]]:
-    """
-    Фильтрует транзакции по диапазону дат.
-
-    Аргументы:
-        transactions: Список транзакций
-        start_date: Начальная дата (YYYY-MM-DD)
-        end_date: Конечная дата (YYYY-MM-DD)
-        date_column: Название колонки с датой
-
-    Возвращает:
-        Отфильтрованный список транзакций
-    """
-    try:
-        if not transactions:
-            return []
-
-        filtered = transactions.copy()
-
-        if start_date:
-            start = pd.to_datetime(start_date)
-            filtered = [t for t in filtered if pd.to_datetime(t.get(date_column, '')) >= start]
-
-        if end_date:
-            end = pd.to_datetime(end_date)
-            filtered = [t for t in filtered if pd.to_datetime(t.get(date_column, '')) <= end]
-
-        logger.info(f"Отфильтровано {len(filtered)} из {len(transactions)} транзакций")
-        return filtered
-
-    except Exception as e:
-        logger.error(f"Ошибка фильтрации по дате: {e}")
-        return transactions
-
-
-def calculate_statistics(transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    Р Р°СЃСЃС‡РёС‚С‹РІР°РµС‚ Р±Р°Р·РѕРІСѓСЋ СЃС‚Р°С‚РёСЃС‚РёРєСѓ РїРѕ С‚СЂР°РЅР·Р°РєС†РёСЏРј.
-
-    Аргументы:
-        transactions: Список транзакций
-
-    Возвращает:
-        Словарь со статистикой
-    """
-    try:
-        if not transactions:
-            return {
-                "total_count": 0,
-                "total_amount": 0,
-                "avg_amount": 0,
-                "min_amount": 0,
-                "max_amount": 0,
-            }
-
-        amounts = [t.get("РЎСѓРјРјР° РѕРїРµСЂР°С†РёРё", 0) for t in transactions]
-
+        # Возвращаем заглушки в случае ошибки
         return {
-            "total_count": len(transactions),
-            "total_amount": sum(amounts),
-            "avg_amount": sum(amounts) / len(amounts) if amounts else 0,
-            "min_amount": min(amounts) if amounts else 0,
-            "max_amount": max(amounts) if amounts else 0,
-        }
-
-    except Exception as e:
-        logger.error(f"Ошибка расчета статистики: {e}")
-        return {}
-
-
-def read_excel_file(file_path: str = "data/operations.xlsx") -> pd.DataFrame:
-    """
-    Читает Excel файл и возвращает DataFrame.
-
-    Аргументы:
-        file_path: Путь к Excel файлу
-
-    Возвращает:
-        DataFrame с данными
-    """
-    try:
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"Файл {file_path} не найден")
-
-        df = pd.read_excel(file_path)
-        logger.info(f"Прочитан файл {file_path}. Строк: {len(df)}, Колонок: {len(df.columns)}")
-        return df
-
-    except Exception as e:
-        logger.error(f"Ошибка чтения файла {file_path}: {e}")
-        raise
-
-
-
-
-def load_transactions(file_path: str | Path) -> pd.DataFrame:
-    """Загружает транзакции из Excel-файла."""
-    try:
-        path = Path(file_path).resolve()
-
-        if os.getenv("TESTING") != "True" and not path.exists():
-            raise FileNotFoundError(f"Файл {path} не найден")
-
-        df = pd.read_excel(path)
-        logger.info("Успешно загружены транзакции из %s", path)
-        return df
-    except Exception as e:
-        logger.error("Ошибка загрузки транзакций: %s", str(e))
-        raise
-
-
-def get_greeting(time: datetime) -> str:
-    """Возвращает приветствие в зависимости от времени суток."""
-    hour = time.hour
-    if 5 <= hour < 12:
-        return "Доброе утро"
-    if 12 <= hour < 17:
-        return "Добрый день"
-    if 17 <= hour < 23:
-        return "Добрый вечер"
-    return "Доброй ночи"
-
-
-def get_currency_rates(currencies: List[str] = None) -> List[Dict[str, Any]]:
-    """Получает текущие курсы валют из API."""
-    try:
-        if os.getenv("TESTING") == "True":
-            # Для тестов возвращаем заглушку
-            default_currencies = currencies or ["USD", "EUR", "GBP"]
-            return [{"currency": c, "rate": 1.0} for c in default_currencies]
-
-        # Здесь должен быть реальный API запрос
-        # Пока используем заглушку
-        rates = {
-            "USD": 90.5,
-            "EUR": 98.2,
-            "GBP": 114.3,
-            "CNY": 12.5,
-            "JPY": 0.61,
-        }
-
-        if currencies:
-            rates = {c: rates.get(c, 0.0) for c in currencies}
-
-        return [
-            {
-                "currency": currency,
-                "rate": rate,
-            }
-            for currency, rate in rates.items()
-        ]
-
-    except Exception as e:
-        logger.error(f"Ошибка получения курсов валют: {e}")
-        return []
-
-
-def get_stock_prices(stocks: List[str] = None) -> List[Dict[str, Any]]:
-    """Получает текущие цены акций из API."""
-    try:
-        if os.getenv("TESTING") == "True":
-            # Для тестов возвращаем заглушку
-            default_stocks = stocks or ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
-            return [{"stock": s, "price": 100.0} for s in default_stocks]
-
-        # Здесь должен быть реальный API запрос
-        # Пока используем заглушку
-        prices = {
             "AAPL": 185.2,
             "GOOGL": 142.5,
             "MSFT": 374.5,
@@ -361,37 +95,22 @@ def get_stock_prices(stocks: List[str] = None) -> List[Dict[str, Any]]:
             "AMZN": 154.9,
         }
 
-        if stocks:
-            prices = {symbol: prices.get(symbol, 0) for symbol in stocks}
-
-        return [
-            {
-                "stock": stock,
-                "price": price,
-            }
-            for stock, price in prices.items()
-        ]
-
-    except Exception as e:
-        logger.error(f"Ошибка получения цен акций: {e}")
-        return []
-
 
 def analyze_expenses(df: pd.DataFrame) -> dict:
     """
     Анализирует расходы из DataFrame.
 
-    Аргументы:
+    Args:
         df: DataFrame с транзакциями
 
-    Возвращает:
+    Returns:
         Словарь с анализом расходов
     """
     if df.empty:
         return {
             "total": 0,
             "main_categories": [],
-            "other_categories": None,  # Важно: None, а не []
+            "other_categories": None,
             "transfers_cash": []
         }
 
@@ -483,60 +202,61 @@ def analyze_expenses(df: pd.DataFrame) -> dict:
             "transfers_cash": [],
         }
 
+
 def analyze_incomes(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Анализирует поступления по категориям.
-    
-    Аргументы:
+
+    Args:
         df: DataFrame с транзакциями
-        
-    Возвращает:
+
+    Returns:
         Словарь с анализом поступлений
     """
     try:
         # Проверяем что DataFrame не пустой
         if df.empty:
             return {"total": 0, "main_categories": []}
-        
+
         # Определяем столбец с суммой
         amount_column = None
         for col in ['Сумма операции', 'Сумма платежа', 'amount']:
             if col in df.columns:
                 amount_column = col
                 break
-        
+
         if amount_column is None:
             return {"total": 0, "main_categories": []}
-        
+
         # Поступления могут быть отрицательными числами или положительными с определенными категориями
         # Сначала ищем отрицательные суммы (традиционный подход для доходов)
         incomes_df = df[df[amount_column] < 0].copy()
-        
+
         # Если нет отрицательных, ищем определенные категории
         if incomes_df.empty and 'Категория' in df.columns:
             income_categories = ['Пополнение', 'Зачисление', 'Возврат', 'Начисление', 'Доход', 'Зарплата']
             mask = df['Категория'].astype(str).str.contains('|'.join(income_categories), case=False, na=False)
             incomes_df = df[mask & (df[amount_column] > 0)].copy()
-        
+
         if incomes_df.empty:
             return {"total": 0, "main_categories": []}
-        
+
         # Группируем по категориям
         if 'Категория' not in incomes_df.columns:
             incomes_df['Категория'] = 'Поступления'
-        
+
         # Для отрицательных сумм берем модуль
         if (incomes_df[amount_column] < 0).any():
             incomes_df['income_amount'] = incomes_df[amount_column].abs()
         else:
             incomes_df['income_amount'] = incomes_df[amount_column]
-        
+
         category_totals = incomes_df.groupby('Категория')['income_amount'].sum()
         total_income = category_totals.sum()
-        
+
         # Сортируем по убыванию
         sorted_categories = category_totals.sort_values(ascending=False)
-        
+
         main_categories = []
         for category, amount in sorted_categories.items():
             main_categories.append({
@@ -544,12 +264,12 @@ def analyze_incomes(df: pd.DataFrame) -> Dict[str, Any]:
                 "amount": float(amount),
                 "percentage": round((amount / total_income * 100), 2) if total_income > 0 else 0,
             })
-        
+
         return {
             "total": float(total_income),
             "main_categories": main_categories,
         }
-        
+
     except Exception as e:
         logger.error(f"Ошибка анализа поступлений: {e}")
         return {"total": 0, "main_categories": []}
@@ -558,11 +278,11 @@ def analyze_incomes(df: pd.DataFrame) -> Dict[str, Any]:
 def analyze_cards(df: pd.DataFrame) -> List[Dict[str, Any]]:
     """
     Анализирует данные по картам.
-    
-    Аргументы:
+
+    Args:
         df: DataFrame с транзакциями
-        
-    Возвращает:
+
+    Returns:
         Список с данными по картам
     """
     try:
@@ -570,35 +290,35 @@ def analyze_cards(df: pd.DataFrame) -> List[Dict[str, Any]]:
         required_columns = ['Номер карты', 'Сумма операции']
         if not all(col in df.columns for col in required_columns):
             return []
-        
+
         # Группируем по картам
         cards_summary = {}
-        
+
         for _, row in df.iterrows():
             card_number = str(row.get('Номер карты', '')).strip()
             if not card_number:
                 continue
-            
+
             # Берем последние 4 цифры
             last_four = card_number[-4:] if len(card_number) >= 4 else card_number
-            
+
             amount = float(row.get('Сумма операции', 0))
             # Расходы - положительные суммы
             if amount <= 0:
                 continue
-            
+
             cashback = float(row.get('Кешбэк', 0))
-            
+
             if last_four not in cards_summary:
                 cards_summary[last_four] = {
                     "card_last_four": last_four,
                     "total_spent": 0.0,
                     "cashback_amount": 0.0,
                 }
-            
+
             cards_summary[last_four]["total_spent"] += amount
             cards_summary[last_four]["cashback_amount"] += cashback
-        
+
         # Рассчитываем дополнительный кешбэк: 1 рубль на каждые 100 рублей
         result = []
         for card_data in cards_summary.values():
@@ -606,9 +326,9 @@ def analyze_cards(df: pd.DataFrame) -> List[Dict[str, Any]]:
             card_data["calculated_cashback"] = calculated_cashback
             card_data["total_cashback"] = card_data["cashback_amount"] + calculated_cashback
             result.append(card_data)
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Ошибка анализа карт: {e}")
         return []
@@ -617,12 +337,12 @@ def analyze_cards(df: pd.DataFrame) -> List[Dict[str, Any]]:
 def get_top_transactions(df: pd.DataFrame, limit: int = 5) -> List[Dict[str, Any]]:
     """
     Возвращает топ транзакций по сумме платежа.
-    
-    Аргументы:
+
+    Args:
         df: DataFrame с транзакциями
         limit: Количество транзакций в топе
-        
-    Возвращает:
+
+    Returns:
         Список топ транзакций
     """
     try:
@@ -632,13 +352,13 @@ def get_top_transactions(df: pd.DataFrame, limit: int = 5) -> List[Dict[str, Any
             if col in df.columns:
                 amount_column = col
                 break
-        
+
         if amount_column is None:
             return []
-        
+
         # Берем топ по убыванию суммы
         top_df = df.nlargest(limit, amount_column)
-        
+
         result = []
         for i, (_, row) in enumerate(top_df.iterrows(), 1):
             result.append({
@@ -648,9 +368,9 @@ def get_top_transactions(df: pd.DataFrame, limit: int = 5) -> List[Dict[str, Any
                 "category": str(row.get('Категория', '')),
                 "date": str(row.get('Дата операции', ''))[:10],
             })
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Ошибка получения топ транзакций: {e}")
         return []
@@ -659,14 +379,12 @@ def get_top_transactions(df: pd.DataFrame, limit: int = 5) -> List[Dict[str, Any
 def get_time_based_greeting() -> str:
     """
     Возвращает приветствие в зависимости от времени суток.
-    
-    Возвращает:
+
+    Returns:
         Приветствие
     """
-    from datetime import datetime
-    
     hour = datetime.now().hour
-    
+
     if 5 <= hour < 12:
         return "Доброе утро"
     elif 12 <= hour < 18:
@@ -677,70 +395,199 @@ def get_time_based_greeting() -> str:
         return "Доброй ночи"
 
 
-def get_greeting(time: datetime) -> str:
-    """Возвращает приветствие в зависимости от времени суток."""
-    hour = time.hour
-    if 5 <= hour < 12:
-        return "Доброе утро"
-    if 12 <= hour < 17:
-        return "Добрый день"
-    if 17 <= hour < 23:
-        return "Добрый вечер"
-    return "Доброй ночи"
-
-
-def get_currency_rates(currencies: List[str] = None) -> List[Dict[str, Any]]:
+def read_excel_file(file_path: str = "data/operations.xlsx") -> pd.DataFrame:
     """
-    Получает текущие курсы валют (заглушка для тестов).
+    Читает Excel файл и возвращает DataFrame.
 
-    Аргументы:
-        currencies: Список кодов валют
+    Args:
+        file_path: Путь к Excel файлу
 
-    Возвращает:
-        Список словарей с курсами валют
+    Returns:
+        DataFrame с данными
     """
     try:
-        if os.getenv("TESTING") == "True":
-            # Для тестов возвращаем заглушку
-            default_currencies = currencies or ["USD", "EUR", "GBP"]
-            return [{"currency": c, "rate": 1.0} for c in default_currencies]
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Файл {file_path} не найден")
 
-        # Здесь должен быть реальный API запрос
-        # Пока используем заглушку
-        rates = {
-            "USD": 90.5,
-            "EUR": 98.2,
-            "GBP": 114.3,
-            "CNY": 12.5,
-            "JPY": 0.61,
-        }
-
-        if currencies:
-            rates = {c: rates.get(c, 0.0) for c in currencies}
-
-        return [
-            {
-                "currency": currency,
-                "rate": rate,
-            }
-            for currency, rate in rates.items()
-        ]
+        df = pd.read_excel(file_path)
+        logger.info(f"Прочитан файл {file_path}. Строк: {len(df)}, Колонок: {len(df.columns)}")
+        return df
 
     except Exception as e:
-        logger.error(f"Ошибка получения курсов валют: {e}")
+        logger.error(f"Ошибка чтения файла {file_path}: {e}")
+        raise
+
+
+def load_transactions(filepath: str = "data/operations.xlsx") -> List[Dict[str, Any]]:
+    """
+    Загружает транзакции из Excel файла.
+    (Алиас для совместимости со старым кодом)
+
+    Args:
+        filepath: Путь к Excel файлу
+
+    Returns:
+        Список словарей с транзакциями
+    """
+    try:
+        df = read_excel_file(filepath)
+        return df.to_dict('records')
+    except Exception as e:
+        logger.error(f"Ошибка загрузки транзакций: {e}")
         return []
 
-def load_transactions(file_path: str | Path) -> pd.DataFrame:
-    """Загружает транзакции из Excel-файла."""
+def save_report(report_data: Dict[str, Any], filename_prefix: str) -> str:
+    """
+    Сохраняет отчет в JSON файл.
+
+    Args:
+        report_data: Данные отчета
+        filename_prefix: Префикс имени файла
+
+    Returns:
+        Путь к сохраненному файлу
+    """
     try:
-        path = Path(file_path).resolve()
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{filename_prefix}_{timestamp}.json"
 
-        if os.getenv("TESTING") != "True" and not path.exists():
-            raise FileNotFoundError(f"Файл {path} не найден")
+        with open(filename, 'w', encoding='utf-8') as f:
+            json.dump(report_data, f, ensure_ascii=False, indent=2)
 
-        df = pd.read_excel(path)
-        logger.info("Успешно загружены транзакции из %s", path)
-        return df
+        logger.info(f"Отчет сохранен в файл: {filename}")
+        return filename
+
     except Exception as e:
-        logger.error("Ошибка загрузки транзакций: %s", str(e))
+        logger.error(f"Ошибка сохранения отчета: {e}")
+        return ""
+
+
+def calculate_statistics(transactions: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Рассчитывает базовую статистику по транзакциям.
+
+    Args:
+        transactions: Список транзакций
+
+    Returns:
+        Словарь со статистикой
+    """
+    try:
+        if not transactions:
+            return {
+                "total_count": 0,
+                "total_amount": 0,
+                "avg_amount": 0,
+                "min_amount": 0,
+                "max_amount": 0,
+            }
+
+        amounts = [t.get("Сумма операции", 0) for t in transactions]
+
+        return {
+            "total_count": len(transactions),
+            "total_amount": sum(amounts),
+            "avg_amount": sum(amounts) / len(amounts) if amounts else 0,
+            "min_amount": min(amounts) if amounts else 0,
+            "max_amount": max(amounts) if amounts else 0,
+        }
+
+    except Exception as e:
+        logger.error(f"Ошибка расчета статистики: {e}")
+        return {}
+
+
+def filter_by_date_range(
+        transactions: List[Dict[str, Any]],
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        date_column: str = "Дата операции"
+) -> List[Dict[str, Any]]:
+    """
+    Фильтрует транзакции по диапазону дат.
+
+    Args:
+        transactions: Список транзакций
+        start_date: Начальная дата (YYYY-MM-DD)
+        end_date: Конечная дата (YYYY-MM-DD)
+        date_column: Название колонки с датой
+
+    Returns:
+        Отфильтрованный список транзакций
+    """
+    try:
+        if not transactions:
+            return []
+
+        filtered = transactions.copy()
+
+        if start_date:
+            start = pd.to_datetime(start_date)
+            filtered = [t for t in filtered if pd.to_datetime(t.get(date_column, '')) >= start]
+
+        if end_date:
+            end = pd.to_datetime(end_date)
+            filtered = [t for t in filtered if pd.to_datetime(t.get(date_column, '')) <= end]
+
+        logger.info(f"Отфильтровано {len(filtered)} из {len(transactions)} транзакций")
+        return filtered
+
+    except Exception as e:
+        logger.error(f"Ошибка фильтрации по дате: {e}")
+        return transactions
+
+
+def format_amount(amount: float, currency: str = "RUB") -> str:
+    """
+    Форматирует сумму для вывода.
+
+    Args:
+        amount: Сумма
+        currency: Валюта
+
+    Returns:
+        Отформатированная строка
+    """
+    return f"{amount:,.2f} {currency}".replace(",", " ").replace(".", ",")
+
+
+def read_excel_file(file_path: str = "data/operations.xlsx") -> pd.DataFrame:
+    """
+    Читает Excel файл и возвращает DataFrame.
+
+    Args:
+        file_path: Путь к Excel файлу
+
+    Returns:
+        DataFrame с данными
+    """
+    try:
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"Файл {file_path} не найден")
+
+        df = pd.read_excel(file_path)
+        logger.info(f"Прочитан файл {file_path}. Строк: {len(df)}, Колонок: {len(df.columns)}")
+        return df
+
+    except Exception as e:
+        logger.error(f"Ошибка чтения файла {file_path}: {e}")
         raise
+
+
+def load_transactions(filepath: str = "data/operations.xlsx") -> List[Dict[str, Any]]:
+    """
+    Загружает транзакции из Excel файла.
+    (Алиас для совместимости со старым кодом)
+
+    Args:
+        filepath: Путь к Excel файлу
+
+    Returns:
+        Список словарей с транзакциями
+    """
+    try:
+        df = read_excel_file(filepath)
+        return df.to_dict('records')
+    except Exception as e:
+        logger.error(f"Ошибка загрузки транзакций: {e}")
+        return []

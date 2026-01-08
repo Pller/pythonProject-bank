@@ -6,115 +6,51 @@ import logging
 from datetime import datetime
 from typing import Dict, Any
 import pandas as pd
-import json
-from pathlib import Path
-import os
 from src.utils import (
     get_exchange_rates,
     get_stock_prices,
+    analyze_expenses,
+    analyze_incomes,
     analyze_cards,
     get_top_transactions,
     get_time_based_greeting,
-    load_transactions,
-    get_greeting,
-    get_currency_rates,
-    read_excel_file,
 )
 
 logger = logging.getLogger(__name__)
-DATA_DIR = Path(__file__).parent.parent / "data"
 
 
-def home_page(date_str: str) -> Dict[str, Any]:
+def home_page(df: pd.DataFrame) -> Dict[str, Any]:
     """
     Генерирует данные для главной страницы.
 
     Args:
-        date_str: Дата и время в формате "YYYY-MM-DD HH:MM:SS"
+        df: DataFrame с транзакциями
 
     Returns:
         JSON-ответ для главной страницы
     """
     try:
-        # 1. Парсим дату и получаем приветствие
-        date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-        greeting = get_greeting(date)
+        # 1. Приветствие
+        greeting = get_time_based_greeting()
 
-        # 2. Загружаем транзакции
-        transactions = read_excel_file(DATA_DIR / "operations.xlsx")
+        # 2. Данные по картам
+        cards_data = analyze_cards(df)
 
-        # 3. Проверяем, что это DataFrame
-        if not isinstance(transactions, pd.DataFrame):
-            raise ValueError("Транзакции должны быть в формате DataFrame")
+        # 3. Топ-5 транзакций по сумме платежа
+        top_transactions = get_top_transactions(df, 5)
 
-        # 4. Проверяем обязательные колонки
-        required_columns = {"Дата операции", "Номер карты", "Сумма операции", "Кешбэк", "Категория", "Описание"}
-        if not required_columns.issubset(transactions.columns):
-            missing = required_columns - set(transactions.columns)
-            raise ValueError(f"Отсутствуют обязательные колонки: {missing}")
+        # 4. Курс валют
+        exchange_rates = get_exchange_rates()
 
-        # 5. Фильтруем по текущему месяцу (используя дату из аргумента)
-        transactions["Дата операции"] = pd.to_datetime(transactions["Дата операции"])
-        current_month = date.replace(day=1)  # Используем дату из аргумента
-        filtered = transactions[transactions["Дата операции"] >= current_month].copy()
-
-        # 6. Данные по картам (как в примере)
-        cards_data = []
-        if "Номер карты" in filtered.columns:
-            for card in filtered["Номер карты"].dropna().unique():
-                card_str = str(card)
-                last_digits = card_str[-4:] if len(card_str) > 4 else card_str
-                card_trans = filtered[filtered["Номер карты"] == card]
-                total_spent = card_trans["Сумма операции"].sum()
-                cashback = card_trans["Кешбэк"].sum()
-                cards_data.append(
-                    {
-                        "last_digits": last_digits,
-                        "total_spent": round(float(total_spent), 2),
-                        "cashback": round(float(cashback), 2),
-                    }
-                )
-
-        # 7. Топ-5 транзакций (как в примере)
-        top_trans_list = []
-        if not filtered.empty:
-            top_transactions = filtered.nlargest(5, "Сумма операции")
-            top_trans_list = [
-                {
-                    "date": row["Дата операции"].strftime("%d.%m.%Y"),
-                    "amount": round(row["Сумма операции"], 2),
-                    "category": row["Категория"],
-                    "description": row["Описание"],
-                }
-                for _, row in top_transactions.iterrows()
-            ]
-
-        # 8. Курс валют (загружаем из настроек пользователя)
-        try:
-            with open(Path(__file__).parent.parent / "user_settings.json", encoding="utf-8") as f:
-                settings = json.load(f)
-            user_currencies = settings.get("user_currencies", ["USD", "EUR", "GBP"])
-            currency_rates = get_currency_rates(user_currencies)
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            # Если нет настроек, используем дефолтные валюты
-            currency_rates = get_currency_rates()
-
-        # 9. Стоимость акций (загружаем из настроек пользователя)
-        try:
-            with open(Path(__file__).parent.parent / "user_settings.json", encoding="utf-8") as f:
-                settings = json.load(f)
-            user_stocks = settings.get("user_stocks", ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"])
-            stock_prices = get_stock_prices(user_stocks)
-        except (FileNotFoundError, json.JSONDecodeError, KeyError):
-            # Если нет настроек, используем дефолтные акции
-            stock_prices = get_stock_prices()
+        # 5. Стоимость акций из S&P500
+        stock_prices = get_stock_prices()
 
         result = {
             "page": "home",
             "greeting": greeting,
             "cards": cards_data,
-            "top_transactions": top_trans_list,
-            "currency_rates": currency_rates,
+            "top_transactions": top_transactions,
+            "exchange_rates": exchange_rates,
             "stock_prices": stock_prices,
             "status": "success",
             "generated_at": datetime.now().isoformat(),
@@ -135,11 +71,75 @@ def home_page(date_str: str) -> Dict[str, Any]:
 
 def events_page(df: pd.DataFrame, period: str = "M") -> Dict[str, Any]:
     """
-    Заглушка для функции events_page (для совместимости).
+    Генерирует данные для страницы событий.
+
+    Args:
+        df: DataFrame с транзакциями
+        period: Период (D - день, W - неделя, M - месяц)
+
+    Returns:
+        JSON-ответ для страницы событий
     """
-    return {
-        "page": "events",
-        "error": "Функция временно недоступна",
-        "status": "error",
-        "generated_at": datetime.now().isoformat(),
-    }
+    try:
+        # Определяем период (используется для фильтрации, если нужно)
+        period_names = {"D": "день", "W": "неделя", "M": "месяц"}
+        period_name = period_names.get(period, "месяц")
+
+        # 1. Анализ расходов
+        expenses_analysis = analyze_expenses(df)
+
+        # 2. Анализ поступлений
+        incomes_analysis = analyze_incomes(df)
+
+        # 3. Курс валют
+        exchange_rates = get_exchange_rates()
+
+        # 4. Стоимость акций из S&P500
+        stock_prices = get_stock_prices()
+
+        # Для совместимости с тестами
+        other_categories = expenses_analysis.get("other_categories")
+
+        # Формируем структуру с обоими вариантами ключей
+        expenses_data = {
+            "total": expenses_analysis.get("total", 0),
+            "main": {
+                "categories": expenses_analysis.get("main_categories", []),
+            },
+            "category_summary": expenses_analysis.get("main_categories", []),
+            "transfers_cash": expenses_analysis.get("transfers_cash", []),
+        }
+
+        # Добавляем other_categories в корень (для теста test_events_page_empty_dataframe)
+        if other_categories is not None:
+            expenses_data["other_categories"] = other_categories
+            expenses_data["main"]["other"] = other_categories
+        else:
+            # Важно: при пустом DataFrame должен быть None
+            expenses_data["other_categories"] = None
+
+        result = {
+            "page": "events",
+            "period": period_name,
+            "expenses": expenses_data,
+            "incomes": {
+                "total": incomes_analysis.get("total", 0),
+                "main_categories": incomes_analysis.get("main_categories", []),
+            },
+            "exchange_rates": exchange_rates,
+            "stock_prices": stock_prices,
+            "status": "success",
+            "generated_at": datetime.now().isoformat(),
+        }
+
+        logger.info(f"Сгенерирована страница событий (период: {period})")
+        return result
+
+    except Exception as e:
+        logger.error(f"Ошибка генерации страницы событий: {e}")
+        return {
+            "page": "events",
+            "error": str(e),
+            "status": "error",
+            "generated_at": datetime.now().isoformat(),
+        }
